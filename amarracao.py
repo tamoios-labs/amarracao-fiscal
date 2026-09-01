@@ -295,17 +295,20 @@ def mostrar_gui_inicial():
     Tela inicial do programa - pra quem não mexe em código não precisar
     editar nada no arquivo pra rodar. Tem duas abas:
       - "Início": a opção "Criar pastas novas do GLPI agora" (marcada
-        por padrão - ver `TEXTO_AJUDA` pro que cada estado faz) e os
-        botões "Cancelar"/"Iniciar automação".
+        por padrão - ver `TEXTO_AJUDA` pro que cada estado faz), as
+        opções de modo invisível (headless) do navegador pra GLPI e pra
+        Protheus SEPARADAS (cada sistema abre sua própria sessão de
+        browser - ver `responder_chamado_glpi`/`executar_extracao_glpi`
+        vs `fluxo_protheus` - então cada um pode rodar visível ou
+        escondido independente do outro), e os botões "Cancelar"/
+        "Iniciar automação".
       - "Ajuda": o texto de `TEXTO_AJUDA`, explicando cada etapa do
         fluxo em português simples.
 
-    Devolve True se "Criar pastas novas do GLPI agora" ficou marcada,
-    False se desmarcada (equivalente ao antigo `USAR_PASTAS_MANUAIS =
-    True` fixo no código - pula o GLPI e abre `selecionar_pastas_teste`
-    pra reaproveitar pastas já baixadas), ou None se a janela foi
-    fechada/cancelada sem clicar em "Iniciar automação" (nesse caso
-    `main()` deve encerrar sem fazer nada).
+    Devolve um dict {"criar_pastas_glpi": bool, "headless_glpi": bool,
+    "headless_protheus": bool}, ou None se a janela foi fechada/
+    cancelada sem clicar em "Iniciar automação" (nesse caso `main()`
+    deve encerrar sem fazer nada).
 
     Bloqueia até a janela fechar.
     """
@@ -374,8 +377,59 @@ def mostrar_gui_inicial():
         fg="#444444",
     ).pack(padx=35, pady=(0, 10), anchor="w")
 
+    tk.Label(
+        aba_inicio,
+        text="Modo invisível (headless) do navegador",
+        font=("Segoe UI", 10, "bold"),
+        anchor="w",
+    ).pack(padx=15, pady=(10, 0), anchor="w")
+
+    tk.Label(
+        aba_inicio,
+        text=(
+            "Marcado: o navegador desse sistema roda escondido, sem abrir janela "
+            "nenhuma na tela. Desmarcado: abre a janela do navegador de verdade, "
+            "pra você acompanhar/conferir o que está acontecendo."
+        ),
+        justify="left",
+        wraplength=560,
+        fg="#444444",
+    ).pack(padx=15, pady=(0, 8), anchor="w")
+
+    # GLPI headless por padrão (só baixa anexos e responde chamado, não
+    # tem tela nenhuma pra conferir de propósito - ver `mostrar_falha`/
+    # `mostrar_amarracao_concluida`, que são só do lado do Protheus).
+    # Protheus VISÍVEL por padrão - as telas de confirmação mostram
+    # SCREENSHOT (não precisam do navegador aberto pra funcionar), mas
+    # ver o navegador de verdade rodando ainda ajuda a acompanhar/
+    # confiar no que a automação está fazendo, então o padrão continua
+    # seguro (visível) - quem já confia no fluxo pode marcar headless.
+    headless_glpi_var = tk.BooleanVar(value=True)
+    tk.Checkbutton(
+        aba_inicio,
+        text="GLPI em modo invisível (headless)",
+        variable=headless_glpi_var,
+        anchor="w",
+        justify="left",
+        wraplength=560,
+    ).pack(padx=35, pady=(0, 2), anchor="w")
+
+    headless_protheus_var = tk.BooleanVar(value=False)
+    tk.Checkbutton(
+        aba_inicio,
+        text="Protheus em modo invisível (headless)",
+        variable=headless_protheus_var,
+        anchor="w",
+        justify="left",
+        wraplength=560,
+    ).pack(padx=35, pady=(0, 10), anchor="w")
+
     def _iniciar():
-        resultado["valor"] = criar_pastas_var.get()
+        resultado["valor"] = {
+            "criar_pastas_glpi": criar_pastas_var.get(),
+            "headless_glpi": headless_glpi_var.get(),
+            "headless_protheus": headless_protheus_var.get(),
+        }
         janela.destroy()
 
     frame_botoes = tk.Frame(aba_inicio)
@@ -767,13 +821,14 @@ def salvar_nota_protheus(driver, simular=SIMULAR_SALVAR_PROTHEUS):
     return True
 
 
-def responder_chamado_glpi(chamado_id, chamado_url, mensagem):
+def responder_chamado_glpi(chamado_id, chamado_url, mensagem, headless=None):
     """
     Abre o chamado no GLPI numa sessão de navegador SEPARADA da do
     Protheus (não reusa `driver` do `fluxo_protheus` - são dois
-    sistemas/logins diferentes), usando o mesmo Options global (`get_
-    chrome_options()`, headless/visível conforme `browser_config.
-    HEADLESS`) do resto do fluxo.
+    sistemas/logins diferentes). `headless` vem da opção "GLPI em modo
+    invisível" da tela inicial (ver `mostrar_gui_inicial`); se não
+    vier (`None`), `get_chrome_options` cai no padrão global de
+    `browser_config.HEADLESS`.
 
     Clica em "Responder" (abre o formulário de acompanhamento/
     seguimento, colapsado por padrão), preenche `mensagem` no editor
@@ -787,7 +842,7 @@ def responder_chamado_glpi(chamado_id, chamado_url, mensagem):
     um id que não se repete.
     """
     print(f"Abrindo o chamado {chamado_id} no GLPI...")
-    driver_glpi = webdriver.Chrome(options=get_chrome_options())
+    driver_glpi = webdriver.Chrome(options=get_chrome_options(headless=headless))
     try:
         a_logar(driver_glpi)
         driver_glpi.get(chamado_url)
@@ -1012,7 +1067,8 @@ def _gerar_documento_e_confirmar(driver, nf_busca):
     print(f"  ✔ Bolinha da nota {nf_busca} confirmada vermelha - documento gerado com sucesso.")
 
 
-def fluxo_protheus(pasta=None, notas=None, pedido_pdf=None, numero_pc=None, chamado_id=None, chamado_url=None):
+def fluxo_protheus(pasta=None, notas=None, pedido_pdf=None, numero_pc=None, chamado_id=None, chamado_url=None,
+                    headless_protheus=False, headless_glpi=None):
     inicio_fluxo = time.time()
     # Guarda a nota em andamento no momento de uma falha (setada dentro
     # do `while notas_restantes` abaixo) - o `except` usa pra saber qual
@@ -1020,12 +1076,12 @@ def fluxo_protheus(pasta=None, notas=None, pedido_pdf=None, numero_pc=None, cham
     # próxima nota" em `mostrar_falha`. None se a falha ocorrer antes de
     # começar a processar qualquer nota (ex: no login).
     nota = None
-    # headless=False fixo (não usa o HEADLESS global): o browser do
-    # Protheus fica sempre visível, independente do modo configurado
-    # pro GLPI - útil pra acompanhar o fluxo e pra `mostrar_falha`/
-    # `mostrar_amarracao_concluida`, que já dependiam de rodar visível
-    # pra fazer sentido pro usuário conferir a tela.
-    driver = webdriver.Chrome(options=get_chrome_options(headless=False))
+    # `headless_protheus` vem da tela inicial (ver `mostrar_gui_
+    # inicial`), independente do modo escolhido pro GLPI - as telas de
+    # confirmação (`mostrar_falha`/`mostrar_amarracao_concluida`) mostram
+    # SCREENSHOT, então funcionam mesmo headless, mas o padrão continua
+    # visível (`False`) - ver `mostrar_gui_inicial`.
+    driver = webdriver.Chrome(options=get_chrome_options(headless=headless_protheus))
     driver.get(URL)
 
     # Tudo dentro deste try roda com o browser já aberto - qualquer etapa
@@ -1311,7 +1367,7 @@ def fluxo_protheus(pasta=None, notas=None, pedido_pdf=None, numero_pc=None, cham
                             "não dá pra responder o GLPI."
                         )
                     mensagem = f"Nota fiscal {nf} amarrada ao pedido de compra {numero_pc} com sucesso."
-                    responder_chamado_glpi(chamado_id, chamado_url, mensagem)
+                    responder_chamado_glpi(chamado_id, chamado_url, mensagem, headless=headless_glpi)
 
                     # Renomeia (não apaga) só o PDF da nota usada NESSA
                     # amarração, prefixando "AMARRADA - " - outras notas da
@@ -1395,12 +1451,17 @@ def fluxo_protheus(pasta=None, notas=None, pedido_pdf=None, numero_pc=None, cham
 
 def main():
     # 0) Tela inicial: deixa quem não mexe em código escolher se quer
-    #    criar pastas novas do GLPI agora, sem precisar editar nada no
-    #    arquivo (ver `mostrar_gui_inicial`).
-    criar_pastas_glpi = mostrar_gui_inicial()
-    if criar_pastas_glpi is None:
+    #    criar pastas novas do GLPI agora e se cada sistema (GLPI/
+    #    Protheus) roda com o navegador visível ou headless, sem
+    #    precisar editar nada no arquivo (ver `mostrar_gui_inicial`).
+    opcoes_iniciais = mostrar_gui_inicial()
+    if opcoes_iniciais is None:
         print("Cancelado na tela inicial - encerrando sem fazer nada.")
         return
+
+    criar_pastas_glpi = opcoes_iniciais["criar_pastas_glpi"]
+    headless_glpi = opcoes_iniciais["headless_glpi"]
+    headless_protheus = opcoes_iniciais["headless_protheus"]
 
     # 1) Extração do GLPI: loga, coleta chamados, cria pastas dos
     #    chamados DENTRO deste diretório (chamados_glpi/) e baixa anexos.
@@ -1420,7 +1481,7 @@ def main():
         print(f"\n[PASTAS EXISTENTES] {len(pastas_criadas)} pasta(s) selecionada(s) manualmente (GLPI pulado).\n")
     else:
         try:
-            dados, pastas_criadas = executar_extracao_glpi()
+            dados, pastas_criadas = executar_extracao_glpi(headless=headless_glpi)
             print(f"\nGLPI: {len(dados)} chamado(s) processado(s).\n")
         except Exception as e:
             print(f"Falha na extração do GLPI: {type(e).__name__}: {e}")
@@ -1472,7 +1533,10 @@ def main():
     # ser filtradas à parte das que já foram amarradas de verdade.
     notas_ignoradas = set()
 
-    resultado, nota_falha, pasta = fluxo_protheus(pasta, notas, pedido_pdf, numero_pc, chamado_id, chamado_url)
+    resultado, nota_falha, pasta = fluxo_protheus(
+        pasta, notas, pedido_pdf, numero_pc, chamado_id, chamado_url,
+        headless_protheus=headless_protheus, headless_glpi=headless_glpi,
+    )
     while resultado in ("tentar_novamente", "pular_nota"):
         if resultado == "pular_nota" and nota_falha:
             notas_ignoradas.add(nota_falha["arquivo"])
@@ -1502,7 +1566,10 @@ def main():
             # e dava FileNotFoundError.
             if pedido_pdf:
                 pedido_pdf = os.path.join(pasta, os.path.basename(pedido_pdf))
-        resultado, nota_falha, pasta = fluxo_protheus(pasta, notas, pedido_pdf, numero_pc, chamado_id, chamado_url)
+        resultado, nota_falha, pasta = fluxo_protheus(
+        pasta, notas, pedido_pdf, numero_pc, chamado_id, chamado_url,
+        headless_protheus=headless_protheus, headless_glpi=headless_glpi,
+    )
 
 
 if __name__ == "__main__":

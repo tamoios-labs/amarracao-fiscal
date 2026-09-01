@@ -204,12 +204,17 @@ def _renomear_notas_ideal_com_ocr(caminho_pasta_chamado, nome_pasta, area):
         ok(f"'{nome_arquivo}' renomeada para '{numero}.pdf' (OCR no download).", nivel=1)
 
 
-def executar_extracao_glpi():
+def executar_extracao_glpi(headless=None):
     """
     Fluxo completo do GLPI: abre o navegador (Options compartilhado),
     loga, coleta os chamados com um 'Feito', e para cada um extrai os
     dados, cria a pasta (DENTRO do diretório da amarracao), tira o print
     e baixa os anexos. Retorna a lista de dados dos chamados.
+
+    `headless` vem da opção "GLPI em modo invisível" da tela inicial
+    (ver `mostrar_gui_inicial` em amarracao.py); se não vier (`None`),
+    `get_chrome_options` cai no padrão global de `browser_config.
+    HEADLESS`.
     """
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -228,7 +233,7 @@ def executar_extracao_glpi():
         aviso(f"Área de OCR não definida - pulando renomeação automática das notas IDEAL no download: {e}")
         area_ocr_ideal = None
 
-    driver = webdriver.Chrome(options=get_chrome_options())
+    driver = webdriver.Chrome(options=get_chrome_options(headless=headless))
     dados_chamados = []
     pastas_criadas = []  # pastas de chamado criadas NESTA rodada
 
