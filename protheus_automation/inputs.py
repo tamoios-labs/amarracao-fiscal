@@ -92,18 +92,15 @@ def _focar(driver, host, interno):
 
 def _limpar(driver, interno):
     """
-    Esvazia o campo de um jeito bem redundante: vai pro INÍCIO e dá 12
-    DELETE (apaga pra frente), depois vai pro FIM e dá 12 BACKSPACE
-    (apaga pra trás) - o campo "Pesquisar" (NF com zeros à esquerda, ver
-    `pesquisar`) tem no máximo 9 dígitos, então 12 de cada lado já cobre
-    o campo cheio com folga, dos dois lados, não só um. Cada tecla com
-    uma pausa curta - digitar
-    rápido demais nesse campo mascarado (`picture`) pode fazer ele
-    reformatar errado, e no fim das contas é justamente uma limpeza mal
-    feita aqui que já causou sobra de busca anterior grudada com o
-    número novo (ex: campo mostrando "00002890003" em vez de
-    "000028903" - resto de "000028900" que não tinha sido apagado
-    direito antes do "03" novo entrar).
+    Esvazia o campo: vai pro FIM e dá 20 BACKSPACE (apaga pra trás) - o
+    campo "Pesquisar" (NF com zeros à esquerda, ver `pesquisar`) tem no
+    máximo 9 dígitos, então 20 cobre o campo cheio com bastante folga.
+    Cada tecla com uma pausa curta - digitar rápido demais nesse campo
+    mascarado (`picture`) pode fazer ele reformatar errado, e no fim das
+    contas é justamente uma limpeza mal feita aqui que já causou sobra
+    de busca anterior grudada com o número novo (ex: campo mostrando
+    "00002890003" em vez de "000028903" - resto de "000028900" que não
+    tinha sido apagado direito antes do "03" novo entrar).
 
     NÃO usa CTRL+A: em campos com `picture`/máscara (ex: "Pesquisar"), o
     CTRL+A é engolido como se fosse a letra "a" digitada.
@@ -112,13 +109,8 @@ def _limpar(driver, interno):
     direto no `value` + evento `input` sintético, sem depender de
     teclado.
     """
-    interno.send_keys(Keys.HOME)
-    for _ in range(12):
-        interno.send_keys(Keys.DELETE)
-        time.sleep(0.05)
-
     interno.send_keys(Keys.END)
-    for _ in range(12):
+    for _ in range(20):
         interno.send_keys(Keys.BACKSPACE)
         time.sleep(0.05)
 
