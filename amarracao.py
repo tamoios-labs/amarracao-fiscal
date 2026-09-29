@@ -246,16 +246,15 @@ pedido. Você decide:
     segue para o próximo passo.
   - "Cancelar": pula essa nota (não salva nada) e passa para a próxima.
 
-5. APÓS "CONTINUAR" - AUTOMÁTICO, SEM PARAR
-Depois de "Continuar", o programa faz tudo sozinho, sem pausar pra
-pedir confirmação de nada:
-  - Clica em "Confirmar" no Protheus;
-  - Marca o checkbox da nota na lista do Monitor;
-  - Clica em "Outras Ações" > "Gerar Docto", confirma a geração e trata
-    as telas de divergência que às vezes aparecem (segue em frente
-    escolhendo a opção que gera o documento mesmo com a divergência);
-  - Espera a bolinha da nota, na lista do Monitor, virar VERMELHA -
-    é o sinal de que o documento foi gerado de verdade;
+5. APÓS "CONTINUAR" - GERAR DOCTO À MÃO
+Depois de "Continuar", o programa:
+  - Clica em "Confirmar" no Protheus (salva a nota) e volta pra lista
+    do Monitor;
+  - Mostra a tela "Gerar documento" e ESPERA: você gera o documento à
+    mão ("Outras Ações" > "Gerar Docto") e depois clica em "Já gerei o
+    Docto". Se fechar essa tela no X, o programa para sem responder o
+    GLPI nem renomear nada.
+Depois da sua confirmação, segue sozinho:
   - Responde automaticamente o chamado no GLPI avisando que a nota foi
     amarrada;
   - Renomeia o PDF dessa nota pra "AMARRADA - ..." na pasta (ela já foi
@@ -265,9 +264,6 @@ pedir confirmação de nada:
     nada, que já tem progresso ali - quando a ÚLTIMA nota da pasta for
     amarrada, o nome vira "AMARRADA - ");
   - Passa direto pra próxima nota da mesma pasta, se houver.
-Se a bolinha não virar vermelha (documento não confirmado), o programa
-PARA e mostra a tela de falha, SEM responder o GLPI nem renomear nada -
-não é seguro considerar a nota amarrada se o documento não foi gerado.
 
 6. SE ALGO DER ERRADO
 Se o programa encontrar um erro em qualquer etapa, ele mostra uma tela
@@ -677,6 +673,53 @@ def mostrar_amarracao_concluida(driver, pares, numero_pc=None, nf=None):
 
     janela.mainloop()
     return escolha["valor"]
+
+
+def mostrar_aguardar_docto(numero_pc=None, nf=None):
+    """
+    Mostra, numa janela sempre no topo, um aviso pedindo pro usuário
+    gerar o documento À MÃO no Protheus ("Outras Ações" > "Gerar Docto")
+    depois que a nota foi salva, e espera ele confirmar que gerou.
+
+    Bloqueia até o usuário clicar em "Já gerei o Docto" (devolve True)
+    ou fechar a janela no X (devolve False - o chamador não deve
+    responder o GLPI nem renomear nada nesse caso).
+    """
+    import tkinter as tk
+
+    janela = tk.Tk()
+    janela.title("Gerar documento")
+    janela.attributes("-topmost", True)
+
+    tk.Label(
+        janela,
+        text=f"Pedido de Compra: {numero_pc or '(desconhecido)'}    |    Nota Fiscal: {nf or '(desconhecida)'}",
+        font=("Segoe UI", 13, "bold"),
+        justify="left",
+    ).pack(padx=20, pady=(20, 10), anchor="w")
+
+    tk.Label(
+        janela,
+        text=(
+            "A nota foi salva no Protheus.\n\n"
+            "Gere o documento manualmente (Outras Ações > Gerar Docto)\n"
+            "e, quando terminar, clique em \"Já gerei o Docto\" para\n"
+            "responder o GLPI e seguir para a próxima nota."
+        ),
+        font=("Segoe UI", 11),
+        justify="left",
+    ).pack(padx=20, pady=(0, 10), anchor="w")
+
+    confirmado = {"valor": False}
+
+    def _confirmar():
+        confirmado["valor"] = True
+        janela.destroy()
+
+    tk.Button(janela, text="Já gerei o Docto", width=18, command=_confirmar).pack(pady=(5, 20))
+
+    janela.mainloop()
+    return confirmado["valor"]
 
 
 def mostrar_falha(driver, erro):
@@ -1338,28 +1381,44 @@ def fluxo_protheus(pasta=None, notas=None, pedido_pdf=None, numero_pc=None, cham
 
             if escolha == "continuar":
                 if salvar_nota_protheus(driver):
-                    # Marca o checkbox da primeira linha do Monitor (a
-                    # nota que acabou de ser confirmada, sempre volta em
-                    # primeiro) - passo necessário pra "Outras Ações" ->
-                    # "Gerar Docto" agir sobre ELA, não sobre nada.
-                    with etapa("Marcar checkbox da primeira linha do Monitor"):
-                        if not selecionar_primeira_linha_monitor(driver):
-                            raise RuntimeError(
-                                "Não consegui marcar o checkbox da primeira linha do Monitor "
-                                "depois de 'Confirmar' - sem isso, 'Outras Ações' > 'Gerar Docto' "
-                                "agiria sobre nada."
-                            )
+                    # DESATIVADO: geração automática do documento. Agora o
+                    # "Gerar Docto" é feito à mão pelo usuário, e o
+                    # programa só espera a confirmação dele (ver
+                    # `mostrar_aguardar_docto` logo abaixo). Pra voltar ao
+                    # fluxo automático, descomente este bloco e remova a
+                    # chamada de `mostrar_aguardar_docto`.
+                    #
+                    # # Marca o checkbox da primeira linha do Monitor (a
+                    # # nota que acabou de ser confirmada, sempre volta em
+                    # # primeiro) - passo necessário pra "Outras Ações" ->
+                    # # "Gerar Docto" agir sobre ELA, não sobre nada.
+                    # with etapa("Marcar checkbox da primeira linha do Monitor"):
+                    #     if not selecionar_primeira_linha_monitor(driver):
+                    #         raise RuntimeError(
+                    #             "Não consegui marcar o checkbox da primeira linha do Monitor "
+                    #             "depois de 'Confirmar' - sem isso, 'Outras Ações' > 'Gerar Docto' "
+                    #             "agiria sobre nada."
+                    #         )
+                    #
+                    # # Gera o documento e só devolve quando a bolinha da
+                    # # nota confirmar VERMELHA (ver `_gerar_documento_e_
+                    # # confirmar`) - só a partir daqui a amarração está
+                    # # DE VERDADE concluída. Se essa função lançar, cai
+                    # # no `except` de fora (mostra a falha) SEM responder
+                    # # o GLPI nem renomear nada - não é seguro considerar
+                    # # a nota amarrada se o documento não foi gerado.
+                    # _gerar_documento_e_confirmar(driver, nf_busca)
 
-                    # Gera o documento e só devolve quando a bolinha da
-                    # nota confirmar VERMELHA (ver `_gerar_documento_e_
-                    # confirmar`) - só a partir daqui a amarração está
-                    # DE VERDADE concluída. Se essa função lançar, cai
-                    # no `except` de fora (mostra a falha) SEM responder
-                    # o GLPI nem renomear nada - não é seguro considerar
-                    # a nota amarrada se o documento não foi gerado.
-                    _gerar_documento_e_confirmar(driver, nf_busca)
+                    # Espera o usuário gerar o documento à mão no Protheus
+                    # e confirmar. Se ele fechar a janela sem confirmar,
+                    # para aqui SEM responder o GLPI nem renomear nada -
+                    # não é seguro considerar a nota amarrada sem o
+                    # documento gerado.
+                    if not mostrar_aguardar_docto(numero_pc=numero_pc, nf=nf):
+                        print("Geração do documento não confirmada - encerrando sem responder o GLPI.")
+                        break
 
-                    print(f"✔ Nota amarrada e documento gerado com sucesso. Pedido: {numero_pc} | Nota fiscal: {nf}")
+                    print(f"✔ Nota amarrada e documento gerado (manualmente). Pedido: {numero_pc} | Nota fiscal: {nf}")
 
                     if not chamado_id:
                         raise RuntimeError(
