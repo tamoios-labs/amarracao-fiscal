@@ -252,8 +252,10 @@ Depois de "Continuar", o programa:
     do Monitor;
   - Mostra a tela "Gerar documento" e ESPERA: você gera o documento à
     mão ("Outras Ações" > "Gerar Docto") e depois clica em "Já gerei o
-    Docto". Se fechar essa tela no X, o programa para sem responder o
-    GLPI nem renomear nada.
+    Docto". Se der erro ao gerar, clique em "Ir para próxima nota":
+    essa nota fica sem resposta no GLPI e sem renomear (pra revisão
+    manual) e o programa segue pra próxima. Se fechar essa tela no X,
+    o programa para sem responder o GLPI nem renomear nada.
 Depois da sua confirmação, segue sozinho:
   - Responde automaticamente o chamado no GLPI avisando que a nota foi
     amarrada;
@@ -681,9 +683,13 @@ def mostrar_aguardar_docto(numero_pc=None, nf=None):
     gerar o documento À MÃO no Protheus ("Outras Ações" > "Gerar Docto")
     depois que a nota foi salva, e espera ele confirmar que gerou.
 
-    Bloqueia até o usuário clicar em "Já gerei o Docto" (devolve True)
-    ou fechar a janela no X (devolve False - o chamador não deve
-    responder o GLPI nem renomear nada nesse caso).
+    Bloqueia até o usuário escolher e devolve:
+      - "gerado": clicou em "Já gerei o Docto" - segue respondendo o
+        GLPI e marcando a nota como amarrada.
+      - "pular": clicou em "Ir para próxima nota" (ex: deu erro ao gerar
+        o docto) - o chamador não responde o GLPI nem renomeia nada,
+        só passa pra próxima nota.
+      - None: fechou a janela no X.
     """
     import tkinter as tk
 
@@ -704,22 +710,27 @@ def mostrar_aguardar_docto(numero_pc=None, nf=None):
             "A nota foi salva no Protheus.\n\n"
             "Gere o documento manualmente (Outras Ações > Gerar Docto)\n"
             "e, quando terminar, clique em \"Já gerei o Docto\" para\n"
-            "responder o GLPI e seguir para a próxima nota."
+            "responder o GLPI e seguir para a próxima nota.\n\n"
+            "Se der erro ao gerar, clique em \"Ir para próxima nota\":\n"
+            "essa nota fica sem resposta no GLPI e sem ser renomeada."
         ),
         font=("Segoe UI", 11),
         justify="left",
     ).pack(padx=20, pady=(0, 10), anchor="w")
 
-    confirmado = {"valor": False}
+    escolha = {"valor": None}
 
-    def _confirmar():
-        confirmado["valor"] = True
+    def _escolher(valor):
+        escolha["valor"] = valor
         janela.destroy()
 
-    tk.Button(janela, text="Já gerei o Docto", width=18, command=_confirmar).pack(pady=(5, 20))
+    frame_botoes = tk.Frame(janela)
+    frame_botoes.pack(pady=(5, 20))
+    tk.Button(frame_botoes, text="Ir para próxima nota", width=18, command=lambda: _escolher("pular")).pack(side="left", padx=5)
+    tk.Button(frame_botoes, text="Já gerei o Docto", width=18, command=lambda: _escolher("gerado")).pack(side="left", padx=5)
 
     janela.mainloop()
-    return confirmado["valor"]
+    return escolha["valor"]
 
 
 def mostrar_falha(driver, erro):
@@ -1410,11 +1421,18 @@ def fluxo_protheus(pasta=None, notas=None, pedido_pdf=None, numero_pc=None, cham
                     # _gerar_documento_e_confirmar(driver, nf_busca)
 
                     # Espera o usuário gerar o documento à mão no Protheus
-                    # e confirmar. Se ele fechar a janela sem confirmar,
-                    # para aqui SEM responder o GLPI nem renomear nada -
-                    # não é seguro considerar a nota amarrada sem o
-                    # documento gerado.
-                    if not mostrar_aguardar_docto(numero_pc=numero_pc, nf=nf):
+                    # e confirmar. Se ele pular (ex: deu erro ao gerar) ou
+                    # fechar a janela, NÃO responde o GLPI nem renomeia
+                    # nada - não é seguro considerar a nota amarrada sem o
+                    # documento gerado. O PDF fica intacto pra revisão.
+                    escolha_docto = mostrar_aguardar_docto(numero_pc=numero_pc, nf=nf)
+                    if escolha_docto == "pular":
+                        print(f"Nota {nota.get('arquivo')} pulada na geração do docto - sem responder o GLPI.")
+                        if notas_restantes:
+                            continue
+                        print("Não há mais notas nessa pasta pra processar.")
+                        break
+                    if escolha_docto != "gerado":
                         print("Geração do documento não confirmada - encerrando sem responder o GLPI.")
                         break
 
